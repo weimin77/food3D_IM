@@ -1,7 +1,11 @@
+#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <string>
 #include <vector>
+#if !defined(_WIN32) && !defined(__ARM_EABI__)
+#include <sys/resource.h>
+#endif
 #include "log.hpp"
 #include "measurement.hpp"
 
@@ -16,6 +20,52 @@ namespace {
 
 const char* const kBaselinePcd = RESOURCES_PATH "/d405_260322274982_20260805_142739.pcd";
 const char* const kFoodPcd = RESOURCES_PATH "/d405_260322274982_20260819_180010.pcd";
+
+#ifndef __ARM_EABI__
+using Clock = std::chrono::steady_clock;
+
+// 墙钟时间（毫秒）。
+double wall_ms(const Clock::time_point& a, const Clock::time_point& b) {
+    return std::chrono::duration<double, std::milli>(b - a).count();
+}
+
+#if defined(_WIN32)
+// Windows 不提供 getrusage：CPU 时间与峰值内存记为 -1（输出 N/A）。
+struct CpuSnapshot {};
+CpuSnapshot cpu_snapshot() { return CpuSnapshot{}; }
+double cpu_ms_since(const CpuSnapshot& /*unused*/) { return -1.0; }
+double peak_rss_mb() { return -1.0; }
+#else
+using CpuSnapshot = rusage;
+
+CpuSnapshot cpu_snapshot() {
+    rusage snapshot;
+    getrusage(RUSAGE_SELF, &snapshot);
+    return snapshot;
+}
+
+// 两次 rusage 之间的进程 CPU 时间（用户态 + 内核态，毫秒）。
+double cpu_ms_since(const CpuSnapshot& before) {
+    const rusage after = cpu_snapshot();
+    const double user = (after.ru_utime.tv_sec - before.ru_utime.tv_sec) * 1000.0 +
+                        (after.ru_utime.tv_usec - before.ru_utime.tv_usec) / 1000.0;
+    const double system = (after.ru_stime.tv_sec - before.ru_stime.tv_sec) * 1000.0 +
+                          (after.ru_stime.tv_usec - before.ru_stime.tv_usec) / 1000.0;
+    return user + system;
+}
+
+// 进程峰值驻留内存（MB）。ru_maxrss 在 Linux 是 KB，在 macOS 是字节。
+double peak_rss_mb() {
+    rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+#if defined(__APPLE__)
+    return static_cast<double>(usage.ru_maxrss) / (1024.0 * 1024.0);
+#else
+    return static_cast<double>(usage.ru_maxrss) / 1024.0;
+#endif
+}
+#endif // _WIN32
+#endif // __ARM_EABI__
 
 } // namespace
 
@@ -40,10 +90,10 @@ int main(int argc, char* argv[]) {
         std::cout << "未提供参数，使用默认: " << baseline_path << " " << food_path << std::endl;
     }
 
-    // 开启日志：五级日志 + 控制台 + 文件（覆盖写），记录算法中间结果与状态。
-    log_set_level(LogLevel::kInfo);
-    log_set_console(true);
-    log_set_file("pcd_im_trace.txt", LogFileMode::kTruncate);
+    // 关闭日志（含文件写盘），避免 I/O 干扰 run() 计时；口径与 example/bench.cpp 一致。
+    // 只保留 Error 级、且不走控制台；本程序自己负责输出结果与指标。
+    log_set_level(LogLevel::kError);
+    log_set_console(false);
 
     const PointCloud baseline = load_pcd(baseline_path);
     const PointCloud food = load_pcd(food_path);
@@ -56,7 +106,15 @@ int main(int argc, char* argv[]) {
     std::cout << "初始点云数量: " << food.points.size() << std::endl;
 
     FoodVolumeMeasurer measurer;
-    const VolumeEstimate est = measurer.set_baseline({baseline}).set_food(food).run();
+    measurer.set_baseline({baseline}).set_food(food);
+
+    // 只对 run() 计时：点云加载与 setter 的拷贝不计入，与 example/bench.cpp 口径一致。
+    const CpuSnapshot cpu_before = cpu_snapshot();
+    const Clock::time_point wall_before = Clock::now();
+    const VolumeEstimate est = measurer.run();
+    const double run_wall_ms = wall_ms(wall_before, Clock::now());
+    const double run_cpu_ms = cpu_ms_since(cpu_before);
+    const double peak_rss = peak_rss_mb();
 
     std::cout << "\n=== IM 复现完成 ===" << std::endl;
     std::cout << "输入点数: " << est.input_points << std::endl;
@@ -87,7 +145,21 @@ int main(int argc, char* argv[]) {
     std::cout << std::defaultfloat;
     std::cout << "未匹配 baseline cell 数: " << est.missing_baseline_cells << std::endl;
 
-    log_close_file();
+    // 性能指标：与 example/bench.cpp 相同的口径（仅 run() 计时，日志已关闭）。
+    std::cout << "\n=== 性能指标 ===" << std::endl;
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "run() 墙钟时间: " << run_wall_ms << " ms" << std::endl;
+    if (run_cpu_ms >= 0.0) {
+        std::cout << "run() CPU 时间: " << run_cpu_ms << " ms" << std::endl;
+    } else {
+        std::cout << "run() CPU 时间: N/A" << std::endl;
+    }
+    if (peak_rss >= 0.0) {
+        std::cout << "峰值内存 max_rss: " << peak_rss << " MB" << std::endl;
+    } else {
+        std::cout << "峰值内存 max_rss: N/A" << std::endl;
+    }
+    std::cout << std::defaultfloat;
 
     return est.status == MeasurementStatus::kSuccess ? 0 : 1;
 #else
