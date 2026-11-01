@@ -51,7 +51,7 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve build mode
         id: mode
@@ -89,7 +89,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Build target in ephemeral container
         env:
@@ -180,7 +180,7 @@ jobs:
 
       - name: Upload logs and result bundle
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: build-${{ matrix.target_key }}-${{ matrix.toolchain_version }}
           path: |

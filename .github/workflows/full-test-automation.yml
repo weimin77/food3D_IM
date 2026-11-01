@@ -32,10 +32,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -62,7 +62,7 @@ jobs:
           sudo apt install -y libnsl-dev lcov
 
       - name: Cache Conan packages
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ env.CONAN_HOME }}
           key: conan-${{ runner.os }}-${{ hashFiles('conanfile.py', 'conandata.yml', 'metadata.json') }}
@@ -84,7 +84,7 @@ jobs:
         if: >-
           steps.read_metadata.outputs.trigger == 'true' &&
           steps.read_metadata.outputs.saving == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TestResult-log-${{ env.timestamp }}
           path: test_package/test/export/TestResult.log
@@ -94,7 +94,7 @@ jobs:
         if: >-
           steps.read_metadata.outputs.trigger == 'true' &&
           steps.read_metadata.outputs.coverage == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Coverage-report-${{ env.timestamp }}
           path: test_package/test/export/coverage/
