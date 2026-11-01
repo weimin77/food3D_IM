@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install toolchain
         run: |
@@ -109,7 +109,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -137,7 +137,7 @@ jobs:
         if: steps.check_grafana.outputs.available == 'true'
         # Pinned to MegaLinter v8.8.0 — keep in sync with `--release` in
         # .github/misc/run-megalinter.sh so local runs match CI exactly.
-        uses: oxsecurity/megalinter@e08c2b05e3dbc40af4c23f41172ef1e068a7d651
+        uses: oxsecurity/megalinter@9949bad031045f366be2467e00e8371a7328a2e2
         continue-on-error: false
         id: ml_grafana
         env:
@@ -157,7 +157,7 @@ jobs:
       - name: MegaLinter (artifact-only)
         if: steps.check_grafana.outputs.available != 'true'
         # Pinned to MegaLinter v8.8.0 (same as the Grafana path above).
-        uses: oxsecurity/megalinter@e08c2b05e3dbc40af4c23f41172ef1e068a7d651
+        uses: oxsecurity/megalinter@9949bad031045f366be2467e00e8371a7328a2e2
         continue-on-error: false
         id: ml_fallback
         env:
@@ -168,7 +168,7 @@ jobs:
       # Always upload artifacts as a safety net (works for both paths)
       - name: Archive production artifacts
         if: success() || failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MegaLinter reports
           include-hidden-files: "true"
